@@ -2,17 +2,17 @@ module.exports = {
   pathPrefix: `/`, // Change to `/running_page` when running on github pages
   siteMetadata: {
     siteTitle: 'Running Page',
-    siteUrl: 'https://yihong.run',
+    siteUrl: 'https://alairelibre.net',
     logo: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQTtc69JxHNcmN1ETpMUX4dozAgAN6iPjWalQ&usqp=CAU',
     description: 'Personal site and blog',
     navLinks: [
       {
         name: 'Blog',
-        url: 'https://yihong.run/running',
+        url: 'https://alairelibre.net',
       },
       {
         name: 'About',
-        url: 'https://github.com/yihong0618/running_page/blob/master/README-CN.md',
+        url: 'https://github.com/irvingbennett/running_page',
       },
     ],
   },
@@ -55,10 +55,7 @@ module.exports = {
       },
     },
     {
-      resolve: 'gatsby-plugin-sass',
-      options: {
-        precision: 8,
-      },
+      resolve: 'gatsby-plugin-sass'
     },
     {
       resolve: 'gatsby-plugin-react-svg',

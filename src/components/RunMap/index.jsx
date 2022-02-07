@@ -1,3 +1,4 @@
+import mapboxgl from '!mapbox-gl'; // Added to try to fix MapBox transpile error
 import MapboxLanguage from '@mapbox/mapbox-gl-language';
 import React from 'react';
 import ReactMapGL, { Layer, Source } from 'react-map-gl';
@@ -11,7 +12,9 @@ import {
 import { geoJsonForMap } from 'src/utils/utils';
 import RunMarker from './RunMaker';
 import RunMapButtons from './RunMapButtons';
-import styles from './style.module.scss';
+import * as styles from './style.module.scss';
+import 'mapbox-gl/dist/mapbox-gl.css'; // Added to fix warning about missing mapbox css
+
 
 const RunMap = ({
   title,
