@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React, { lazy, useState, Suspense } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import activities from '@/static/activities.json';
 import styles from './style.module.css';
-import {ACTIVITY_TOTAL, ACTIVITY_TYPES} from "@/utils/const";
+import { ACTIVITY_TOTAL } from "@/utils/const";
+import { formatPace } from '@/utils/utils';
+import { totalStat } from '@assets/index';
+import { loadSvgComponent } from '@/utils/svgUtils';
+
+const MonthofLifeSvg = lazy(() => loadSvgComponent(totalStat, './mol.svg'));
 
 // Define interfaces for our data structures
 interface Activity {
-  start_date: string;
+  start_date_local: string;
   distance: number;
   moving_time: string;
   type: string;
@@ -44,16 +49,15 @@ interface ActivityCardProps {
   summary: DisplaySummary;
   dailyDistances: number[];
   interval: string;
-  activityType: string;
 }
 
 interface ActivityGroups {
   [key: string]: ActivitySummary;
 }
 
-type IntervalType = 'year' | 'month' | 'week' | 'day';
+type IntervalType = 'year' | 'month' | 'week' | 'day' | 'life';
 
-const ActivityCard: React.FC<ActivityCardProps> = ({ period, summary, dailyDistances, interval, activityType }) => {
+const ActivityCard: React.FC<ActivityCardProps> = ({ period, summary, dailyDistances, interval }) => {
     const generateLabels = (): number[] => {
         if (interval === 'month') {
             const [year, month] = period.split('-').map(Number);
@@ -80,10 +84,11 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ period, summary, dailyDista
     };
 
     const formatPace = (speed: number): string => {
-        if (speed === 0) return '0:00';
+        if (speed === 0) return '0:00 min/km';
         const pace = 60 / speed; // min/km
-        const minutes = Math.floor(pace);
-        const seconds = Math.round((pace - minutes) * 60);
+        const totalSeconds = Math.round(pace * 60); // Total seconds per km
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds} min/km`;
     };
 
@@ -96,13 +101,13 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ period, summary, dailyDista
             <h2 className={styles.activityName}>{period}</h2>
             <div className={styles.activityDetails}>
                 <p><strong>{ACTIVITY_TOTAL.TOTAL_DISTANCE_TITLE}:</strong> {summary.totalDistance.toFixed(2)} km</p>
-                <p><strong>{ACTIVITY_TOTAL.AVERAGE_SPEED_TITLE}:</strong> {activityType === 'ride' ? `${summary.averageSpeed.toFixed(2)} km/h` : formatPace(summary.averageSpeed)}</p>
+                <p><strong>{ACTIVITY_TOTAL.AVERAGE_SPEED_TITLE}:</strong> {formatPace(summary.averageSpeed)}</p>
                 <p><strong>{ACTIVITY_TOTAL.TOTAL_TIME_TITLE}:</strong> {formatTime(summary.totalTime)}</p>
                 {interval !== 'day' && (
                     <>
                         <p><strong>{ACTIVITY_TOTAL.ACTIVITY_COUNT_TITLE}:</strong> {summary.count}</p>
                         <p><strong>{ACTIVITY_TOTAL.MAX_DISTANCE_TITLE}:</strong> {summary.maxDistance.toFixed(2)} km</p>
-                        <p><strong>{ACTIVITY_TOTAL.MAX_SPEED_TITLE}:</strong> {activityType === 'ride' ? `${summary.maxSpeed.toFixed(2)} km/h` : formatPace(summary.maxSpeed)}</p>
+                        <p><strong>{ACTIVITY_TOTAL.MAX_SPEED_TITLE}:</strong> {formatPace(summary.maxSpeed)}</p>
                     </>
                 )}
                 {interval === 'day' && (
@@ -137,7 +142,6 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ period, summary, dailyDista
 
 const ActivityList: React.FC = () => {
     const [interval, setInterval] = useState<IntervalType>('month');
-    const [activityType, setActivityType] = useState<string>('run');
     const navigate = useNavigate();
 
     const toggleInterval = (newInterval: IntervalType): void => {
@@ -145,7 +149,7 @@ const ActivityList: React.FC = () => {
     };
 
     const filterActivities = (activity: Activity): boolean => {
-        return activity.type.toLowerCase() === activityType;
+        return activity.type.toLowerCase() === 'run';
     };
 
     const convertTimeToSeconds = (time: string): number => {
@@ -155,7 +159,7 @@ const ActivityList: React.FC = () => {
 
     const groupActivities = (interval: IntervalType): ActivityGroups => {
         return (activities as Activity[]).filter(filterActivities).reduce((acc: ActivityGroups, activity) => {
-            const date = new Date(activity.start_date);
+            const date = new Date(activity.start_date_local);
             let key: string;
             let index: number;
             switch (interval) {
@@ -168,13 +172,15 @@ const ActivityList: React.FC = () => {
                     index = date.getDate() - 1; // Return current day (0-30)
                     break;
                 case 'week':
-                    const startOfYear = new Date(date.getFullYear(), 0, 1);
-                    const weekNumber = Math.ceil(((date.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
-                    key = `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`; // Zero padding
-                    index = date.getDay(); // Return the day of the week (0-6)
+                    const currentDate = new Date(date.valueOf());
+                    currentDate.setDate(currentDate.getDate() + 4 - (currentDate.getDay() || 7)); // Set to nearest Thursday (ISO weeks defined by Thursday)
+                    const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+                    const weekNum = Math.ceil((((currentDate.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+                    key = `${currentDate.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+                    index = (date.getDay() + 6) % 7; // Return current day (0-6, Monday-Sunday)
                     break;
                 case 'day':
-                    key = date.toISOString().split('T')[0];
+                    key = date.toLocaleDateString("zh").replaceAll('/', '-'); // Format date as YYYY-MM-DD
                     index = 0; // Return 0
                     break;
                 default:
@@ -182,16 +188,16 @@ const ActivityList: React.FC = () => {
                     index = 0; // Default return 0
             }
 
-            if (!acc[key]) acc[key] = { 
-                totalDistance: 0, 
-                totalTime: 0, 
-                count: 0, 
-                dailyDistances: [], 
-                maxDistance: 0, 
-                maxSpeed: 0, 
-                location: '' 
+            if (!acc[key]) acc[key] = {
+                totalDistance: 0,
+                totalTime: 0,
+                count: 0,
+                dailyDistances: [],
+                maxDistance: 0,
+                maxSpeed: 0,
+                location: ''
             };
-            
+
             const distanceKm = activity.distance / 1000; // Convert to kilometers
             const timeInSeconds = convertTimeToSeconds(activity.moving_time);
             const speedKmh = timeInSeconds > 0 ? distanceKm / (timeInSeconds / 3600) : 0;
@@ -217,60 +223,67 @@ const ActivityList: React.FC = () => {
     return (
         <div className={styles.activityList}>
             <div className={styles.filterContainer}>
-                <button 
-                    className={styles.smallHomeButton} 
+                <button
+                    className={styles.smallHomeButton}
                     onClick={() => navigate('/')}
                 >
                     Home
                 </button>
-                <select onChange={(e) => setActivityType(e.target.value)} value={activityType}>
-                    <option value="run">{ACTIVITY_TYPES.RUN_GENERIC_TITLE}</option>
-                    <option value="ride">{ACTIVITY_TYPES.CYCLING_TITLE}</option>
-                </select>
-                <select 
-                    onChange={(e) => toggleInterval(e.target.value as IntervalType)} 
+                <select
+                    onChange={(e) => toggleInterval(e.target.value as IntervalType)}
                     value={interval}
                 >
                     <option value="year">{ACTIVITY_TOTAL.YEARLY_TITLE}</option>
                     <option value="month">{ACTIVITY_TOTAL.MONTHLY_TITLE}</option>
                     <option value="week">{ACTIVITY_TOTAL.WEEKLY_TITLE}</option>
                     <option value="day">{ACTIVITY_TOTAL.DAILY_TITLE}</option>
+                    <option value="life">Life</option>
                 </select>
             </div>
-            <div className={styles.summaryContainer}>
-                {Object.entries(activitiesByInterval)
-                    .sort(([a], [b]) => {
-                        if (interval === 'day') {
-                            return new Date(b).getTime() - new Date(a).getTime(); // Sort by date
-                        } else if (interval === 'week') {
-                            const [yearA, weekA] = a.split('-W').map(Number);
-                            const [yearB, weekB] = b.split('-W').map(Number);
-                            return yearB - yearA || weekB - weekA; // Sort by year and week number
-                        } else {
-                            const [yearA, monthA = 0] = a.split('-').map(Number);
-                            const [yearB, monthB = 0] = b.split('-').map(Number);
-                            return yearB - yearA || monthB - monthA; // Sort by year and month
-                        }
-                    })
-                    .map(([period, summary]) => (
-                        <ActivityCard
-                            key={period}
-                            period={period}
-                            summary={{
-                                totalDistance: summary.totalDistance,
-                                averageSpeed: summary.totalTime ? (summary.totalDistance / (summary.totalTime / 3600)) : 0,
-                                totalTime: summary.totalTime,
-                                count: summary.count,
-                                maxDistance: summary.maxDistance,
-                                maxSpeed: summary.maxSpeed,
-                                location: summary.location,
-                            }}
-                            dailyDistances={summary.dailyDistances}
-                            interval={interval}
-                            activityType={activityType}
-                        />
-                    ))}
-            </div>
+
+            {interval === 'life' && (
+                <div className={styles.lifeContainer}>
+                    <Suspense fallback={<div>Loading SVG...</div>}>
+                        <MonthofLifeSvg />
+                    </Suspense>
+                </div>
+            )}
+
+            {interval !== 'life' && (
+                <div className={styles.summaryContainer}>
+                    {Object.entries(activitiesByInterval)
+                        .sort(([a], [b]) => {
+                            if (interval === 'day') {
+                                return new Date(b).getTime() - new Date(a).getTime(); // Sort by date
+                            } else if (interval === 'week') {
+                                const [yearA, weekA] = a.split('-W').map(Number);
+                                const [yearB, weekB] = b.split('-W').map(Number);
+                                return yearB - yearA || weekB - weekA; // Sort by year and week number
+                            } else {
+                                const [yearA, monthA = 0] = a.split('-').map(Number);
+                                const [yearB, monthB = 0] = b.split('-').map(Number);
+                                return yearB - yearA || monthB - monthA; // Sort by year and month
+                            }
+                        })
+                        .map(([period, summary]) => (
+                            <ActivityCard
+                                key={period}
+                                period={period}
+                                summary={{
+                                    totalDistance: summary.totalDistance,
+                                    averageSpeed: summary.totalTime ? (summary.totalDistance / (summary.totalTime / 3600)) : 0,
+                                    totalTime: summary.totalTime,
+                                    count: summary.count,
+                                    maxDistance: summary.maxDistance,
+                                    maxSpeed: summary.maxSpeed,
+                                    location: summary.location,
+                                }}
+                                dailyDistances={summary.dailyDistances}
+                                interval={interval}
+                            />
+                        ))}
+                </div>
+            )}
         </div>
     );
 };
